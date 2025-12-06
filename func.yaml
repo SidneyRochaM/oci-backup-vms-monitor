@@ -1,0 +1,6 @@
+schema_version: 20180708
+name: backup_orphan_finder
+version: 0.0.1
+runtime: python
+entrypoint: /function/bin/fdk /function/func.py handler
+memory: 3072

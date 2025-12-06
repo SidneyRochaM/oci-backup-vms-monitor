@@ -1,0 +1,151 @@
+name: 🚀 Build, Push e Deploy OCI Function: Backup Orphan Finder
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: 'Tipo de Incremento de Versão'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+        - patch   # v1.0.0 -> v1.0.1 (Correções)
+        - minor   # v1.0.0 -> v1.1.0 (Novas Features)
+        - major   # v1.0.0 -> v2.0.0 (Mudanças Grandes)
+
+env:
+  FUNCTION_NAME: backup_orphan_finder # <<< Nome da sua função
+  OCI_REGION_KEY: ${{ secrets.OCI_REGION_KEY }} 
+
+# Permissão necessária para o Robô criar a Tag no Git
+permissions:
+  contents: write
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    env:
+      OCI_TENANCY_NAMESPACE: ${{ secrets.OCI_TENANCY_NAMESPACE }}
+      
+    steps:
+      - name: 1. Checkout do Código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Importante: Baixa todo o histórico para ler as tags anteriores
+
+      # --- LÓGICA INTELIGENTE DE VERSÃO (Patch, Minor ou Major) ---
+      - name: 2. Gerar Versão Semântica Automática
+        id: semantic_version
+        run: |
+          echo "--- Buscando última tag ---"
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0.0")
+          echo "Última versão encontrada: $LAST_TAG"
+
+          # Remove o 'v'
+          VERSION_NO_V=${LAST_TAG#v}
+          IFS='.' read -r -a parts <<< "$VERSION_NO_V"
+          MAJOR=${parts[0]}
+          MINOR=${parts[1]}
+          PATCH=${parts[2]}
+          
+          # Define o tipo de incremento (default: patch)
+          BUMP_TYPE="${{ github.event.inputs.bump_type }}"
+          if [ -z "$BUMP_TYPE" ]; then BUMP_TYPE="patch"; fi
+          
+          echo "Tipo de incremento selecionado: $BUMP_TYPE"
+
+          if [ "$BUMP_TYPE" == "major" ]; then
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+          elif [ "$BUMP_TYPE" == "minor" ]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+          else
+            PATCH=$((PATCH + 1))
+          fi
+          
+          NEW_TAG="v$MAJOR.$MINOR.$PATCH"
+          echo "🚀 Próxima versão será: $NEW_TAG"
+          
+          echo "NEW_TAG=$NEW_TAG" >> $GITHUB_ENV
+
+      - name: 3. Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 4. Login no Oracle Container Registry (OCIR)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.OCI_REGION_KEY }}.ocir.io
+          username: ${{ env.OCI_TENANCY_NAMESPACE }}/${{ secrets.OCIR_USERNAME }}
+          password: ${{ secrets.OCIR_AUTH_TOKEN }}
+
+      - name: 5. Build e Push da Imagem Única
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          platforms: linux/arm64 
+          tags: |
+            ${{ env.OCI_REGION_KEY }}.ocir.io/${{ env.OCI_TENANCY_NAMESPACE }}/${{ env.FUNCTION_NAME }}:${{ env.NEW_TAG }}
+            ${{ env.OCI_REGION_KEY }}.ocir.io/${{ env.OCI_TENANCY_NAMESPACE }}/${{ env.FUNCTION_NAME }}:latest
+
+      - name: 6. Instalar e Configurar OCI CLI
+        run: |
+          echo "--- Instalando Dependências ---"
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          pip3 install oci-cli
+          
+          echo "--- Configurando Credenciais ---"
+          mkdir -p ~/.oci
+          echo "${{ secrets.OCI_PRIVATE_KEY_PEM }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
+          echo "${{ secrets.OCI_CLI_CONFIG_DATA }}" > ~/.oci/config
+          
+          sed -i "s|key_file=.*|key_file=$HOME/.oci/oci_api_key.pem|g" ~/.oci/config
+
+      - name: 7. Deploy da Função Única
+        env:
+          APP_OCID: ${{ secrets.OCI_APPLICATION_OCID }}
+          IMAGE: ${{ env.OCI_REGION_KEY }}.ocir.io/${{ env.OCI_TENANCY_NAMESPACE }}/${{ env.FUNCTION_NAME }}:${{ env.NEW_TAG }}
+        run: |
+          echo "Gerenciando deploy da função: ${{ env.FUNCTION_NAME }} com versão ${{ env.NEW_TAG }}"
+          
+          MEMORY_MB="3072"
+          TIMEOUT_SEC="300"
+          
+          FUNC_ID=$(oci fn function list \
+            --application-id "$APP_OCID" \
+            --query "data[?\"display-name\"=='${{ env.FUNCTION_NAME }}'].id | [0]" \
+            --raw-output 2>/dev/null)
+          
+          if [ "$FUNC_ID" == "null" ] || [ -z "$FUNC_ID" ]; then
+              echo "Função não encontrada. Criando nova..."
+              oci fn function create \
+                --application-id "$APP_OCID" \
+                --display-name "${{ env.FUNCTION_NAME }}" \
+                --image "$IMAGE" \
+                --memory-in-mbs "$MEMORY_MB" \
+                --timeout-in-seconds "$TIMEOUT_SEC"
+          else
+              echo "Função encontrada. Atualizando imagem..."
+              oci fn function update \
+                --function-id "$FUNC_ID" \
+                --image "$IMAGE" \
+                --memory-in-mbs "$MEMORY_MB" \
+                --timeout-in-seconds "$TIMEOUT_SEC"
+          fi
+
+      # --- FINALIZAÇÃO: Se chegou aqui, o deploy foi sucesso! ---
+      - name: 8. Sucesso! Gravar Tag no Git
+        run: |
+          echo "Deploy OCI concluído com sucesso. Criando tag Git..."
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          git tag ${{ env.NEW_TAG }}
+          git push origin ${{ env.NEW_TAG }}
