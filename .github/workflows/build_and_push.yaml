@@ -1,4 +1,4 @@
-name: 🚀 Build, Push e Deploy OCI Function: Backup Orphan Finder
+name:🚀 Build, Push e Deploy OCI Function: Backup Orphan Finder
 
 on:
   push:
