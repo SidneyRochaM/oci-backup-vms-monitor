@@ -219,3 +219,4 @@ def handler(ctx, data: io.BytesIO = None):
         ctx, status_code=200, 
         response_data=json.dumps({"status": "Concluido", "logs": logs, "count": len(logs)})
     )
+    
