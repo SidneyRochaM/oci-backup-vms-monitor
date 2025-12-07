@@ -68,7 +68,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: iad.ocir.io
-          username: ${{ secrets.OCI_TENANCY_NAMESPACE }}/${{ secrets.OCIR_USERNAME }}
+          username: ${{ secrets.OCI_TENANCY_NAMESPACE }}/${{ secrets.OCIR_USERNAME }} 
           password: ${{ secrets.OCIR_AUTH_TOKEN }}
 
       - name: 5. Build e Push da Imagem
