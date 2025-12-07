@@ -7,14 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       bump_type:
-        description: 'Tipo de Incremento de Versão'
+        description: "Tipo de Incremento de Versão"
         required: true
-        default: 'patch'
+        default: "patch"
         type: choice
         options:
-        - patch
-        - minor
-        - major
+          - patch
+          - minor
+          - major
 
 env:
   FUNCTION_NAME: backup_orphan_finder
@@ -46,7 +46,7 @@ jobs:
           MAJOR=${parts[0]}
           MINOR=${parts[1]}
           PATCH=${parts[2]}
-          
+
           BUMP_TYPE="${{ github.event.inputs.bump_type }}"
           if [ -z "$BUMP_TYPE" ]; then BUMP_TYPE="patch"; fi
 
@@ -55,7 +55,7 @@ jobs:
             minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
             patch) PATCH=$((PATCH + 1)) ;;
           esac
-          
+
           NEW_TAG="v$MAJOR.$MINOR.$PATCH"
           echo "NEW_TAG=$NEW_TAG" >> $GITHUB_ENV
 
@@ -84,7 +84,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y python3-pip
           pip3 install oci-cli
-          
+
           mkdir -p ~/.oci
           echo "${{ secrets.OCI_PRIVATE_KEY_PEM }}" > ~/.oci/oci_api_key.pem
           chmod 600 ~/.oci/oci_api_key.pem
@@ -108,20 +108,20 @@ jobs:
             --raw-output 2>/dev/null)
 
           if [ "$FUNC_ID" == "null" ] || [ -z "$FUNC_ID" ]; then
-              echo "Função não encontrada. Criando..."
-              oci fn function create \
-                --application-id "$APP_OCID" \
-                --display-name "${{ env.FUNCTION_NAME }}" \
-                --image "$IMAGE" \
-                --memory-in-mbs "$MEMORY_MB" \
-                --timeout-in-seconds "$TIMEOUT_SEC"
+            echo "Função não encontrada. Criando..."
+            oci fn function create \
+              --application-id "$APP_OCID" \
+              --display-name "${{ env.FUNCTION_NAME }}" \
+              --image "$IMAGE" \
+              --memory-in-mbs "$MEMORY_MB" \
+              --timeout-in-seconds "$TIMEOUT_SEC"
           else
-              echo "Função encontrada. Atualizando..."
-              oci fn function update \
-                --function-id "$FUNC_ID" \
-                --image "$IMAGE" \
-                --memory-in-mbs "$MEMORY_MB" \
-                --timeout-in-seconds "$TIMEOUT_SEC"
+            echo "Função encontrada. Atualizando..."
+            oci fn function update \
+              --function-id "$FUNC_ID" \
+              --image "$IMAGE" \
+              --memory-in-mbs "$MEMORY_MB" \
+              --timeout-in-seconds "$TIMEOUT_SEC"
           fi
 
       - name: 8. Criar Tag no Git
@@ -130,4 +130,3 @@ jobs:
           git config user.email "actions@github.com"
           git tag ${{ env.NEW_TAG }}
           git push origin ${{ env.NEW_TAG }}
-t
