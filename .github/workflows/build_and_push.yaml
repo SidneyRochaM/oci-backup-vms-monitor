@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       OCI_TENANCY_NAMESPACE: ${{ secrets.OCI_TENANCY_NAMESPACE }}
-      
+
     steps:
       - name: 1. Checkout do Código
         uses: actions/checkout@v4
@@ -50,13 +50,11 @@ jobs:
           BUMP_TYPE="${{ github.event.inputs.bump_type }}"
           if [ -z "$BUMP_TYPE" ]; then BUMP_TYPE="patch"; fi
 
-          if [ "$BUMP_TYPE" == "major" ]; then
-            MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0
-          elif [ "$BUMP_TYPE" == "minor" ]; then
-            MINOR=$((MINOR + 1)); PATCH=0
-          else
-            PATCH=$((PATCH + 1))
-          fi
+          case "$BUMP_TYPE" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
           
           NEW_TAG="v$MAJOR.$MINOR.$PATCH"
           echo "NEW_TAG=$NEW_TAG" >> $GITHUB_ENV
@@ -100,10 +98,10 @@ jobs:
           IMAGE: iad.ocir.io/${{ env.OCI_TENANCY_NAMESPACE }}/${{ env.FUNCTION_NAME }}:${{ env.NEW_TAG }}
         run: |
           echo "Deploying função: ${{ env.FUNCTION_NAME }} versão ${{ env.NEW_TAG }}"
-          
+
           MEMORY_MB="3072"
           TIMEOUT_SEC="300"
-          
+
           FUNC_ID=$(oci fn function list \
             --application-id "$APP_OCID" \
             --query "data[?\"display-name\"=='${{ env.FUNCTION_NAME }}'].id | [0]" \
@@ -132,3 +130,4 @@ jobs:
           git config user.email "actions@github.com"
           git tag ${{ env.NEW_TAG }}
           git push origin ${{ env.NEW_TAG }}
+t
